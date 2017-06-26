@@ -1,0 +1,7 @@
+.DS_Store
+vendor/
+config.yml
+logs/
+.idea
+Config.txt
+Lambda Function Config
