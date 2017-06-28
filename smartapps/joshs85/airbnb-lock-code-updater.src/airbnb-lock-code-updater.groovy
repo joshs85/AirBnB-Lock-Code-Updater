@@ -33,6 +33,15 @@ preferences {
   section("LockCode position in lock") {
     input "CodePosition", "number", required: false, title: "Code Position"
   }
+  section("Send Notifications") {
+  	input "SendNotifications", "bool", required: true, title: "Notifications?", defaultValue: true
+  }
+  section ("Turn on these lights after dark when the user successfully unlocks the door") {
+  	input "turnOnSwitchesAfterSunset", "capability.switch", title: "Turn on light(s) after dark", required: false, multiple: true
+  }
+  section("Turn off after x minutes") {
+    input "OffAfter", "number", required: false, title: "Off After?"
+  }
 }
 
 def installed() {
@@ -55,6 +64,8 @@ def updated() {
 def initialize() {
   subscribe(doorlock, "codeReport", codeReportEvent);
   subscribe(doorlock, "codeChanged", codeChangedEvent);
+  subscribe(doorlock, "lock", unlockHandler);
+  if (!state.username) {state.username = ""}
   listCode()
 }
 
@@ -76,9 +87,14 @@ def listCode() {
 
 def updateCode() {
   log.debug "update request received: params: ${params}"
-  if (state.CurrentLockCode.toInteger() != params.code.toInteger()) {
+  def CurrentLockCode = -1 as Integer
+  try {CurrentLockCode = state.CurrentLockCode.toInteger()} catch (e) {}
+  if (CurrentLockCode != params.code.toInteger()) {
       doorlock.setCode(CodePosition.toInteger(), params.code)
-      sendPush(doorlock.label + " door code " + CodePosition.toInteger() + " is being set to " + params.code)
+      state.username = params.title
+      if (SendNotifications) {
+      	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being set to ${params.code} for ${state.username}")
+      }
       return true
   } 
   else {
@@ -90,6 +106,10 @@ def updateCode() {
 def deleteCode() {
   log.debug "starting deleteCode"
   doorlock.deleteCode(CodePosition.toInteger())
+  state.username = ""
+  if (SendNotifications) {
+  	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being deleted.")
+  }
   return ["num":CodePosition.toInteger()]
 }
 
@@ -113,6 +133,40 @@ def codeChangedEvent(evt) {
       log.debug "Code Changed | ${desc}. Requesting a listCode to update my state."
       listCode()
   }
+}
+
+def unlockHandler(evt) {
+    def data = null
+    def lock = evt.device
+    if (evt.data) {
+      data = new JsonSlurper().parseText(evt.data)
+    }
+      //log.debug "Lock event | name $evt.name, value $evt.value, device $evt.displayName, description $evt.descriptionText, data $evt.data"
+      def userCode = data.usedCode as Integer
+      if (userCode == CodePosition && evt.name == "lock" && evt.value == "unlocked" && data.type == "keypad") {
+        log.trace "Event name $evt.name, value $evt.value, device $evt.displayName"
+        if (SendNotifications) {
+          sendPush("${doorlock.label} was unlocked via keypad by ${state.username}")
+        }
+        if (settings.turnOnSwitchesAfterSunset) {
+          def cdt = new Date(now())
+          def sunsetSunrise = getSunriseAndSunset(sunsetOffset: "-00:30") // Turn on 30 minutes before sunset (dark)
+          log.trace "Current DT: $cdt, Sunset $sunsetSunrise.sunset, Sunrise $sunsetSunrise.sunrise"
+          if ((cdt >= sunsetSunrise.sunset) || (cdt <= sunsetSunrise.sunrise)) {
+              log.info "$evt.displayName was unlocked successfully, turning on lights ${settings.turnOnSwitchesAfterSunset} since it's after sunset but before sunrise"
+              settings.turnOnSwitchesAfterSunset.on()
+              if (settings.OffAfter > 0) {
+              	int RunInTime = settings.OffAfter * 60
+                runIn(RunInTime, LightsOff)
+              }
+          }
+        }
+      }
+}
+
+def LightsOff() {
+	log.info "It has been ${OffAfter} minute(s).  Turning off ${settings.turnOnSwitchesAfterSunset}"
+	settings.turnOnSwitchesAfterSunset.off()
 }
 
 def OAuthToken(){
