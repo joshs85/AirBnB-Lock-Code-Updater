@@ -33,8 +33,9 @@ preferences {
   section("LockCode position in lock") {
     input "CodePosition", "number", required: false, title: "Code Position"
   }
-  section("Send Notifications") {
-  	input "SendNotifications", "bool", required: true, title: "Notifications?", defaultValue: true
+  section("Notifications") {
+  	input "SendUnlockNotifications", "bool", required: true, title: "Notify On Door Unlock?", defaultValue: true
+    input "SendCodeNotifications", "bool", required: true, title: "Code Update Notifications?", defaultValue: true
   }
   section ("Turn on these lights after dark when the user successfully unlocks the door") {
   	input "turnOnSwitchesAfterSunset", "capability.switch", title: "Turn on light(s) after dark", required: false, multiple: true
@@ -92,7 +93,7 @@ def updateCode() {
   if (CurrentLockCode != params.code.toInteger()) {
       doorlock.setCode(CodePosition.toInteger(), params.code)
       state.username = params.title
-      if (SendNotifications) {
+      if (SendCodeNotifications) {
       	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being set to ${params.code} for ${state.username}")
       }
       return true
@@ -107,7 +108,7 @@ def deleteCode() {
   log.debug "starting deleteCode"
   doorlock.deleteCode(CodePosition.toInteger())
   state.username = ""
-  if (SendNotifications) {
+  if (SendCodeNotifications) {
   	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being deleted.")
   }
   return ["num":CodePosition.toInteger()]
@@ -145,7 +146,7 @@ def unlockHandler(evt) {
       def userCode = data.usedCode as Integer
       if (userCode == CodePosition && evt.name == "lock" && evt.value == "unlocked" && data.type == "keypad") {
         log.trace "Event name $evt.name, value $evt.value, device $evt.displayName"
-        if (SendNotifications) {
+        if (SendUnlockNotifications) {
           sendPush("${doorlock.label} was unlocked via keypad by ${state.username}")
         }
         if (settings.turnOnSwitchesAfterSunset) {
@@ -154,7 +155,7 @@ def unlockHandler(evt) {
           log.trace "Current DT: $cdt, Sunset $sunsetSunrise.sunset, Sunrise $sunsetSunrise.sunrise"
           if ((cdt >= sunsetSunrise.sunset) || (cdt <= sunsetSunrise.sunrise)) {
               log.info "$evt.displayName was unlocked successfully, turning on lights ${settings.turnOnSwitchesAfterSunset} since it's after sunset but before sunrise"
-              settings.turnOnSwitchesAfterSunset.on()
+			  LightsOn()
               if (settings.OffAfter > 0) {
               	int RunInTime = settings.OffAfter * 60
                 runIn(RunInTime, LightsOff)
@@ -164,9 +165,25 @@ def unlockHandler(evt) {
       }
 }
 
+def LightsOn() {
+	settings.turnOnSwitchesAfterSunset.each {
+        state."LastLightState${it.id}" = it.currentSwitch
+        log.debug("${it.label} is currently ${it.currentSwitch}")
+        if (state."LastLightState${it.id}" == "off") {
+        	it.on()
+        }
+    }
+}
+
+
 def LightsOff() {
-	log.info "It has been ${OffAfter} minute(s).  Turning off ${settings.turnOnSwitchesAfterSunset}"
-	settings.turnOnSwitchesAfterSunset.off()
+	log.info "It has been ${OffAfter} minute(s).  Turning off lights."
+	settings.turnOnSwitchesAfterSunset.each {
+        if (state."LastLightState${it.id}" == "off") {
+        	log.debug("${it.label} was off when door was unlocked.  Turning back off now.")
+        	it.off()
+        }
+    }
 }
 
 def OAuthToken(){
