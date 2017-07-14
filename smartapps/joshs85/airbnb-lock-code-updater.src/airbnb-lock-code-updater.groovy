@@ -115,12 +115,10 @@ def updateCode() {
       if (SendCodeNotifications) {
       	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being set to ${params.code} for ${state.username}")
       }
-      Arrived()
       return true
   } 
   else {
       log.debug "Requested code and current code are the same. No changes made."
-      Arrived()
       return false
   }
 }
@@ -132,7 +130,6 @@ def deleteCode() {
   if (SendCodeNotifications) {
   	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being deleted.")
   }
-  Departed()
   return ["num":CodePosition.toInteger()]
 }
 
@@ -143,9 +140,7 @@ def codeReportEvent(evt) {
   def desc = evt.descriptionText // Description can have "is set" or "was added" or "changed" when code was added successfully
   if (user == CodePosition.toInteger()) {
   	  state.CurrentLockCode = evt.jsonData.code
-      if(code != ""){
-      	Arrived()
-      }
+      if(code == ""){Departed()} else {Arrived()}
       log.debug "Code Report | ${desc}. Code: ${code}"
   }
 }
