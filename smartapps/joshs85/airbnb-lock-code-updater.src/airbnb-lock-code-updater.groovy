@@ -37,6 +37,9 @@ preferences {
   	input "SendUnlockNotifications", "bool", required: true, title: "Notify On Door Unlock?", defaultValue: true
     input "SendCodeNotifications", "bool", required: true, title: "Code Update Notifications?", defaultValue: true
   }
+  section("Presence Device") {
+  	input "CreateVirtualPresenceDevice", "bool", required: true, title: "Create virtual presence device", defaultValue: true
+  }
   section ("Turn on these lights after dark when the user successfully unlocks the door") {
   	input "turnOnSwitchesAfterSunset", "capability.switch", title: "Turn on light(s) after dark", required: false, multiple: true
   }
@@ -67,6 +70,20 @@ def initialize() {
   subscribe(doorlock, "codeChanged", codeChangedEvent);
   subscribe(doorlock, "lock", unlockHandler);
   if (!state.username) {state.username = ""}
+  def ChildDeviceDNI = "${app.id}-0"
+  def PresenceDevice = getChildDevice(ChildDeviceDNI)
+  if (CreateVirtualPresenceDevice) {
+      if(!PresenceDevice) {
+        PresenceDevice = addChildDevice("joshs85", "AirBnb Virtual Presence Device", ChildDeviceDNI, null, [name:"${app.name} - Virtual Presence", label:name])
+        PresenceDevice.take()
+        log.debug "created ${PresenceDevice.displayName} with id $ChildDeviceDNI"
+        } else {
+            log.debug "Device already created"
+        }
+  } else {
+  	deleteChildDevice(ChildDeviceDNI)
+    log.debug "Child Presence Device Deleted."
+  }
   listCode()
 }
 
@@ -96,10 +113,12 @@ def updateCode() {
       if (SendCodeNotifications) {
       	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being set to ${params.code} for ${state.username}")
       }
+      Arrived()
       return true
   } 
   else {
       log.debug "Requested code and current code are the same. No changes made."
+      Arrived()
       return false
   }
 }
@@ -111,6 +130,7 @@ def deleteCode() {
   if (SendCodeNotifications) {
   	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being deleted.")
   }
+  Departed()
   return ["num":CodePosition.toInteger()]
 }
 
@@ -121,6 +141,9 @@ def codeReportEvent(evt) {
   def desc = evt.descriptionText // Description can have "is set" or "was added" or "changed" when code was added successfully
   if (user == CodePosition.toInteger()) {
   	  state.CurrentLockCode = evt.jsonData.code
+      if(code != ""){
+      	Arrived()
+      }
       log.debug "Code Report | ${desc}. Code: ${code}"
   }
 }
@@ -191,4 +214,22 @@ def OAuthToken(){
         createAccessToken()
 		log.debug "Creating new Access Token"
 	} catch (e) { log.error "Access Token not defined. OAuth may not be enabled. Go to the SmartApp IDE settings to enable OAuth." }
+}
+
+def Arrived(){
+    if (CreateVirtualPresenceDevice) {
+        def ChildDeviceDNI = "${app.id}-0"
+        def PresenceDevice = getChildDevice(ChildDeviceDNI)
+        log.debug("Marking Presence Device As Arrived.")
+        PresenceDevice.arrived()
+    }
+}
+
+def Departed(){
+    if (CreateVirtualPresenceDevice) {
+        def ChildDeviceDNI = "${app.id}-0"
+        def PresenceDevice = getChildDevice(ChildDeviceDNI)
+        log.debug("Marking Presence Device As Departed.")
+        PresenceDevice.departed()
+    }
 }
