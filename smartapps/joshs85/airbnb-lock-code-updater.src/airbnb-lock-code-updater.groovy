@@ -81,8 +81,10 @@ def initialize() {
             log.debug "Device already created"
         }
   } else {
-  	deleteChildDevice(ChildDeviceDNI)
-    log.debug "Child Presence Device Deleted."
+  	if(PresenceDevice){
+        deleteChildDevice(ChildDeviceDNI)
+        log.debug "Child Presence Device Deleted."
+    }
   }
   listCode()
 }
