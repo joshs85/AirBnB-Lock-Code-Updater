@@ -76,14 +76,14 @@ def initialize() {
       if(!PresenceDevice) {
         PresenceDevice = addChildDevice("joshs85", "AirBnb Virtual Presence Device", ChildDeviceDNI, null, [name:"${app.name} - Virtual Presence", label:name])
         PresenceDevice.take()
-        log.debug "created ${PresenceDevice.displayName} with id $ChildDeviceDNI"
+        log.debug "created ${PresenceDevice.displayName} with id ${ChildDeviceDNI}"
         } else {
-            log.debug "Device already created"
+            log.debug "Presence Device already created with id ${ChildDeviceDNI}"
         }
   } else {
   	if(PresenceDevice){
         deleteChildDevice(ChildDeviceDNI)
-        log.debug "Child Presence Device Deleted."
+        log.debug "Child Presence Device ${ChildDeviceDNI} Deleted."
     }
   }
   listCode()
@@ -140,9 +140,9 @@ def codeReportEvent(evt) {
   def desc = evt.descriptionText // Description can have "is set" or "was added" or "changed" when code was added successfully
   if (user == CodePosition.toInteger()) {
   	  state.CurrentLockCode = evt.jsonData.code
-      if(code == ""){Departed()} else {Arrived()}
       log.debug "Code Report | ${desc}. Code: ${code}"
   }
+  if (code == ""){Departed()} else {Arrived()}
 }
 
 def codeChangedEvent(evt) {
