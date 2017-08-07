@@ -119,6 +119,7 @@ def updateCode() {
   } 
   else {
       log.debug "Requested code and current code are the same. No changes made."
+      Arrived()
       return false
   }
 }
@@ -141,8 +142,8 @@ def codeReportEvent(evt) {
   if (user == CodePosition.toInteger()) {
   	  state.CurrentLockCode = evt.jsonData.code
       log.debug "Code Report | ${desc}. Code: ${code}"
+      if (code == ""){Departed()} else {Arrived()}
   }
-  if (code == ""){Departed()} else {Arrived()}
 }
 
 def codeChangedEvent(evt) {
