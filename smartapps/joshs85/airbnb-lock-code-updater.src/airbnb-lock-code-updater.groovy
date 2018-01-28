@@ -31,20 +31,18 @@ preferences {
     input "doorlock", "capability.lockCodes"
   }
   section("LockCode position in lock") {
-    input "CodePosition", "number", required: false, title: "Code Position"
+    input "CodePosition", "number", required: true, title: "Code Position"
   }
   section("Notifications") {
   	input "SendUnlockNotifications", "bool", required: true, title: "Notify On Door Unlock?", defaultValue: true
-    input "SendCodeNotifications", "bool", required: true, title: "Code Update Notifications?", defaultValue: true
+    input "SendCodeNotifications", "bool", required: true, title: "Notify On Code Update?", defaultValue: true
   }
   section("Presence Device") {
   	input "CreateVirtualPresenceDevice", "bool", required: true, title: "Create virtual presence device", defaultValue: true
   }
-  section ("Turn on these lights after dark when the user successfully unlocks the door") {
+  section ("Turn on these lights after dark when door unlocked.") {
   	input "turnOnSwitchesAfterSunset", "capability.switch", title: "Turn on light(s) after dark", required: false, multiple: true
-  }
-  section("Turn off after x minutes") {
-    input "OffAfter", "number", required: false, title: "Off After?"
+    input "OffAfter", "number", required: false, title: "Turn off after x minutes"
   }
 }
 
@@ -66,7 +64,6 @@ def updated() {
 }
 
 def initialize() {
-  subscribe(doorlock, "codeReport", codeReportEvent);
   subscribe(doorlock, "codeChanged", codeChangedEvent);
   subscribe(doorlock, "lock", unlockHandler);
   if (!state.username) {state.username = ""}
@@ -86,7 +83,6 @@ def initialize() {
         log.debug "Child Presence Device ${ChildDeviceDNI} Deleted."
     }
   }
-  listCode()
 }
 
 mappings {
@@ -99,61 +95,40 @@ mappings {
   }
 }
 
-def listCode() {
-  log.debug "List Code | Requesting code ${CodePosition.toInteger()} from lock."
-  doorlock.requestCode(CodePosition.toInteger())
-  return true
-}
-
 def updateCode() {
   log.debug "update request received: params: ${params}"
-  def CurrentLockCode = -1 as Integer
-  try {CurrentLockCode = state.CurrentLockCode.toInteger()} catch (e) {}
-  if (CurrentLockCode != params.code.toInteger()) {
-      doorlock.setCode(CodePosition.toInteger(), params.code)
-      state.username = params.title
-      if (SendCodeNotifications) {
-      	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being set to ${params.code} for ${state.username}")
-      }
-      return true
-  } 
-  else {
-      log.debug "Requested code and current code are the same. No changes made."
-      Arrived()
-      return false
+  state.CurrentLockCode = params.code
+  doorlock.setCode(CodePosition.toInteger(), params.code)
+  state.username = params.title
+  if (SendCodeNotifications) {
+      sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being set to ${params.code} for ${state.username}")
   }
+  Arrived()
+  return true
 }
 
 def deleteCode() {
   log.debug "starting deleteCode"
   doorlock.deleteCode(CodePosition.toInteger())
   state.username = ""
+  state.CurrentLockCode = ""
   if (SendCodeNotifications) {
   	sendPush("${doorlock.label} code ${CodePosition.toInteger()} is being deleted.")
   }
+  Departed()
   return ["num":CodePosition.toInteger()]
 }
 
-def codeReportEvent(evt) {
-  def lock = evt.device
-  def user = evt.value as Integer
-  def code = evt.data ? new JsonSlurper().parseText(evt.data)?.code : "" // Not all locks return a code due to a bug in the base Z-Wave lock device code
-  def desc = evt.descriptionText // Description can have "is set" or "was added" or "changed" when code was added successfully
-  if (user == CodePosition.toInteger()) {
-  	  state.CurrentLockCode = evt.jsonData.code
-      log.debug "Code Report | ${desc}. Code: ${code}"
-      if (code == ""){Departed()} else {Arrived()}
-  }
-}
-
 def codeChangedEvent(evt) {
+  log.debug "codeChangedEvent: device: ${evt.device}"
+  log.debug "codeChangedEvent: value: ${evt.value}"
+  log.debug "codeChangedEvent: data: ${evt.data}"
   def lock = evt.device
-  def user = evt.value as Integer
+  def user = (evt.value - " changed") as Integer
   def code = evt.data ? new JsonSlurper().parseText(evt.data)?.code : "" // Not all locks return a code due to a bug in the base Z-Wave lock device code
   def desc = evt.descriptionText // Description can have "is set" or "was added" or "changed" when code was added successfully
   if (user == CodePosition.toInteger()){
-      log.debug "Code Changed | ${desc}. Requesting a listCode to update my state."
-      listCode()
+      log.debug "Code Changed | ${desc}."
   }
 }
 
@@ -163,10 +138,10 @@ def unlockHandler(evt) {
     if (evt.data) {
       data = new JsonSlurper().parseText(evt.data)
     }
-      //log.debug "Lock event | name $evt.name, value $evt.value, device $evt.displayName, description $evt.descriptionText, data $evt.data"
+      log.debug "Lock event | name $evt.name, value $evt.value, device $evt.displayName, description $evt.descriptionText, data $evt.data"
       def userCode = data.usedCode as Integer
       if (userCode == CodePosition && evt.name == "lock" && evt.value == "unlocked" && data.type == "keypad") {
-        log.trace "Event name $evt.name, value $evt.value, device $evt.displayName"
+        log.trace "Event name $evt.name, value $evt.value, device $evt.displayName, type $data.type"
         if (SendUnlockNotifications) {
           sendPush("${doorlock.label} was unlocked via keypad by ${state.username}")
         }
