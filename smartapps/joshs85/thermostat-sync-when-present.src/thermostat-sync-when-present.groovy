@@ -14,6 +14,7 @@ input "thermostat1", "capability.thermostat", title: "Which Master Thermostat?",
 input "thermostat2", "capability.thermostat", title: "Which Slave Thermostat?", multiple: false, required: true
 input "heaters", "capability.switch", title: "Turn this switch on when heat is called for.", multiple: true, required: false
 input "tempDiff", "number", title: "Temperature Difference Between Master and Slave?", required: true, defaultValue: 2
+input "EmergHeatThreshold", "number", title: "Turn on space heaters when difference in setpoint and actual temp greater than.", required: true, defaultValue: 15
 input "VacantCoolTemp", "number", title: "Cool SetPoint when vacant?", required: true, defaultValue: 85
 input "VacantHeatTemp", "number", title: "Heat SetPoint when vacant?", required: true, defaultValue: 65
 input "ActiontempDiff", "number", title: "Action Threshold Difference Deg?", required: true, defaultValue: 2
@@ -35,10 +36,13 @@ def updated(){
 
 def init(){
   subscribe(thermostat1, "thermostatSetpoint", setPointChangeHandler)
-  //subscribe(thermostat1, "temperature", tempChangedHandler)
+  subscribe(thermostat1, "temperature", tempChangedHandler)
   subscribe(thermostat1, "thermostatOperatingState", OperatingStateChangedHandler)
+  subscribe(thermostat2, "thermostatOperatingState", OperatingStateChangedHandler)
+  subscribe(thermostat2, "thermostatMode", OperatingStateChangedHandler)
   subscribe(onlyWhenPresent, "presence", PresenceChangeHandler)
   runEvery5Minutes(ThermostatPoll)
+  StateSync()
 }
 
 def ThermostatPoll(){
@@ -51,121 +55,124 @@ def ThermostatPoll(){
 }
 
 def PresenceChangeHandler(evt){
-	def presence = onlyWhenPresent.latestValue("presence")
-	def MTmode = thermostat1.latestValue("thermostatMode")
-	def STmode = thermostat2.latestValue("thermostatMode")
-   	    if(presence != "present")
-        {
-            log.info "Presence changed to: ${presence}.  Turning off heaters."
-            heaters.each() {it.off()}
-            if (STMode == "cool")
-            {
-          		log.info "Resetting temp to ${VacantCoolTemp}"
-                thermostat2.setThermostatMode("cool")
-            	thermostat2.setCoolingSetpoint(VacantCoolTemp)
-            }
-            else if (STMode == "heat")
-            {
-            	log.info "Resetting temp to ${VacantHeatTemp}"
-                thermostat2.setThermostatMode("heat")
-            	thermostat2.setHeatingSetpoint(VacantHeatTemp)
-            }
-        }
+	log.debug "PresenceChange Change Handler Begin"
+	StateSync()
 }
 
 def OperatingStateChangedHandler(evt){
-	log.debug "OperatingState Changed Handler Begin"
-	def MThermostatTemp = thermostat1.latestValue("thermostatSetpoint")
-	def SThermostatTemp = thermostat2.latestValue("thermostatSetpoint")
-	def MTmode = thermostat1.latestValue("thermostatMode")
-	def STmode = thermostat2.latestValue("thermostatMode")
-	def MTTempReading = thermostat1.latestValue("temperature")
-    def OperatingState = thermostat1.latestValue("thermostatOperatingState")
-    def presence = onlyWhenPresent.latestValue("presence")
-    
-    log.info "Current Master Thermostat Mode: ${MTmode}"
-	log.info "Current Slave Thermostat Mode: ${STmode}"
-	log.info "Current Temp Reading From Master Thermostat: ${MTTempReading}"
-    log.info "Current Operating State of Master Thermostat: ${OperatingState}"
-    
-    if(presence == "present"){
-        if(OperatingState == "heating"){
-            log.info "Master thermostat is calling for heat.  Turning on heaters."
-            heaters.each() {it.on()}
-        }
-        else if(OperatingState == "cooling")
-        {
-        	log.info "Master thermostat is calling for cooling."
-            heaters.each() {it.off()}
-        } 
-        else
-        {
-            log.info "Not in heat or cool mode.  Turning off heaters."
-            heaters.each() {it.off()}
-        }
-    }
-    else
-    {
-    	log.info "Guests are not present.  Turning off heaters."
-        heaters.each() {it.off()}
-    }
+	log.debug "OperatingState Change Handler Begin"
+	StateSync()
 }
 
 def tempChangedHandler(evt){
 	log.debug "Temperature Changed Handler Begin"
+    StateSync()
+}
+
+def setPointChangeHandler(evt) {
+	log.debug "SetPoint Change Handler Begin"
+	StateSync()
+}
+
+private StateSync()
+{
+	log.debug "StateSync Begin"
 	def MThermostatTemp = thermostat1.latestValue("thermostatSetpoint")
 	def SThermostatTemp = thermostat2.latestValue("thermostatSetpoint")
 	def MTmode = thermostat1.latestValue("thermostatMode")
 	def STmode = thermostat2.latestValue("thermostatMode")
 	def MTTempReading = thermostat1.latestValue("temperature")
+    def STTempReading = thermostat2.latestValue("temperature")
+    def MTOperatingState = thermostat1.latestValue("thermostatOperatingState")
+    def STOperatingState = thermostat2.latestValue("thermostatOperatingState")
     def presence = onlyWhenPresent.latestValue("presence")
-  
-  	//log.debug "Current Slave Mode: ${STmode} | Master Mode: ${MTmode}"
-	//log.debug "Current Master Temp Reading: ${MTTempReading}"
+    if (SThermostatTemp != null){
+    	def difference = (SThermostatTemp - MThermostatTemp)
+        log.info "Current Set Point Difference(S-M): ${difference}"
+    }
+    log.info "(M) Thermostat Mode: ${MTmode}"
+	log.info "(S) Thermostat Mode: ${STmode}"
+    log.info "(M) Operating State: ${MTOperatingState}"
+    log.info "(S) Operating State: ${STOperatingState}"
+	log.info "(M) Temp: ${MTTempReading}"
+    log.info "(S) Temp: ${STTempReading}"
+    log.info "(M) Set Point ${MThermostatTemp}"
+    log.info "(S) Set Point ${SThermostatTemp}"
+
     
-    //Turn on switch if the slave mode is cool and its coolder than the setpoint.
-    //if(presence == "present"){
-    //    if(STmode == "cool" && MTTempReading < (MThermostatTemp - ActiontempDiff)){
-    //        log.debug "Turning on switch."
-    //        heaters.each() {it.on()}
-    //    } else 
-    //        log.debug "Turning off switch."
-    //        heaters.each() {it.off()}
-    //    }
-    //}
-}
-
-def setPointChangeHandler(evt) {
-	log.debug "SetPoint Change Handler Begin"
-	//get the latest temp readings and compare
-    def MThermostatTemp = thermostat1.latestValue("thermostatSetpoint")
-    def SThermostatTemp = thermostat2.latestValue("thermostatSetpoint")
-    def mode = thermostat1.latestValue("thermostatMode")
-    def difference = (SThermostatTemp - MThermostatTemp)
-    def presence = onlyWhenPresent.latestValue("presence")
-
-
-    log.info "Thermostat SetPoint(M): ${MThermostatTemp}"
-    log.info "Thermostat SetPoint(S): ${SThermostatTemp}"
-    log.info "Current Temp Difference(S-M): ${difference}"
-    log.info "Current Mode(M): ${mode}"
-
-    if(presence == "present")
+    if(presence == "present"){
+        if(MTOperatingState == "heating"){
+            def TempDiff = (MThermostatTemp - MTTempReading)
+            log.info "MThermostatTemp - MTTempReading = ${TempDiff}"
+        	if (STOperatingState == "idle" && SThermostatTemp == null)
+            {
+				log.info "Master thermostat is calling for heat.  Slave is in eco.  Turning on space heaters."
+            	heaters.each() {it.on()}
+            }
+            else if (TempDiff > EmergHeatThreshold)
+            {
+            	log.info "Master thermostat is calling for heat.  Temp Diff > ${EmergHeatThreshold}. Turning on space heaters."
+            	heaters.each() {it.on()}
+            }
+            else
+            {
+            	log.info "Master thermostat is calling for heat.  Turning off space heaters and syncing temp."
+                heaters.each() {it.off()}
+                if(difference != tempDiff)
+                {
+                    def NewTemp = (MThermostatTemp + tempDiff)
+                    log.info "Syncing Heating SetPoint to ${NewTemp}"
+                    state.LastSHeatSetpoint = SThermostatTemp
+                    state.LastAction = "heat"
+                    thermostat2.setHeatingSetpoint(NewTemp)
+                }
+            }
+        }
+        else if(MTOperatingState == "cooling")
+        {
+        	log.info "Master thermostat is calling for cooling. Turning Space Heaters Off and syncing temp."
+            heaters.each() {it.off()}
+            if(difference != tempDiff)
+          	{
+            	def NewTemp = (MThermostatTemp + tempDiff)
+				log.info "Syncing Cooling SetPoint to ${NewTemp}"
+                state.LastSCoolSetpoint = SThermostatTemp
+                state.LastAction = "cool"
+				thermostat2.setCoolingSetpoint(NewTemp)
+            }
+        }
+        else
+        {
+            log.info "Not in heat or cool mode.  Turning off heaters."
+            heaters.each() {it.off()}
+            log.info "Restoring slave ${state.LastAction} setpoint to ${state.LastSHeatSetpoint}"
+            if (state.LastAction == "heat")
+            {
+	            thermostat2.setHeatingSetpoint(state.LastSHeatSetpoint)
+            }
+            else if (state.LastAction == "cool")
+            {
+            	thermostat2.setCoolingSetpoint(state.LastSCoolSetpoint)
+            }
+            
+        }
+    }
+    else
     {
-          if(difference != tempDiff)
-          {
-              def NewTemp = (MThermostatTemp + tempDiff)
-              if (mode == "cool")
-              {
-              	  heaters.each() {it.off()}
-              	  log.info "${thermostat2} sync'ed with ${thermostat1} with an offset of ${tempDiff} degrees. Now at ${NewTemp}."
-                  thermostat2.setCoolingSetpoint(NewTemp)
-              }
-              else
-              {
-                //thermostat2.setHeatingSetpoint(NewTemp)
-              }
-          }
+        log.info "Presence changed to: ${presence}.  Turning off heaters."
+        heaters.each() {it.off()}
+        if (STMode == "cool")
+        {
+            log.info "(S) Resetting cool temp to ${VacantCoolTemp}"
+            thermostat2.setThermostatMode("cool")
+            thermostat2.setCoolingSetpoint(VacantCoolTemp)
+        }
+        else if (STMode == "heat")
+        {
+            log.info "(S) Resetting heat temp to ${VacantHeatTemp}"
+            thermostat2.setThermostatMode("heat")
+            thermostat2.setHeatingSetpoint(VacantHeatTemp)
+        }
     }
 }
 
