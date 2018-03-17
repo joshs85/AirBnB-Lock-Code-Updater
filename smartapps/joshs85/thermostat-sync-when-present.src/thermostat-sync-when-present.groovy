@@ -122,8 +122,11 @@ private StateSync()
                 {
                     def NewTemp = (MThermostatTemp + tempDiff)
                     log.info "Syncing Heating SetPoint to ${NewTemp}"
-                    state.LastSHeatSetpoint = SThermostatTemp
-                    state.LastAction = "heat"
+                    if (state.LastAction == null)
+                    {
+                        state.LastSHeatSetpoint = SThermostatTemp
+                        state.LastAction = "heat"
+                    }
                     thermostat2.setHeatingSetpoint(NewTemp)
                 }
             }
@@ -136,25 +139,19 @@ private StateSync()
           	{
             	def NewTemp = (MThermostatTemp + tempDiff)
 				log.info "Syncing Cooling SetPoint to ${NewTemp}"
-                state.LastSCoolSetpoint = SThermostatTemp
-                state.LastAction = "cool"
-				thermostat2.setCoolingSetpoint(NewTemp)
+                if (state.LastAction == null)
+                {
+                	state.LastAction = "cool"
+                    state.LastSCoolSetpoint = SThermostatTemp
+                }
+                thermostat2.setCoolingSetpoint(NewTemp)
             }
         }
         else
         {
             log.info "Not in heat or cool mode.  Turning off heaters."
             heaters.each() {it.off()}
-            log.info "Restoring slave ${state.LastAction} setpoint to ${state.LastSHeatSetpoint}"
-            if (state.LastAction == "heat")
-            {
-	            thermostat2.setHeatingSetpoint(state.LastSHeatSetpoint)
-            }
-            else if (state.LastAction == "cool")
-            {
-            	thermostat2.setCoolingSetpoint(state.LastSCoolSetpoint)
-            }
-            
+			RestoreST()
         }
     }
     else
@@ -164,15 +161,34 @@ private StateSync()
         if (STMode == "cool")
         {
             log.info "(S) Resetting cool temp to ${VacantCoolTemp}"
-            thermostat2.setThermostatMode("cool")
-            thermostat2.setCoolingSetpoint(VacantCoolTemp)
+            thermostat1.setThermostatMode("cool")
+            thermostat1.setCoolingSetpoint(VacantCoolTemp)
         }
         else if (STMode == "heat")
         {
             log.info "(S) Resetting heat temp to ${VacantHeatTemp}"
-            thermostat2.setThermostatMode("heat")
-            thermostat2.setHeatingSetpoint(VacantHeatTemp)
+            thermostat1.setThermostatMode("heat")
+            thermostat1.setHeatingSetpoint(VacantHeatTemp)
         }
+        RestoreST()
+    }
+}
+
+private RestoreST()
+{
+    if (state.LastAction == "heat")
+    {
+    	log.info "Restoring slave ${state.LastAction} setpoint to ${state.LastSHeatSetpoint}"
+        thermostat2.setHeatingSetpoint(state.LastSHeatSetpoint)
+        state.LastAction = null
+        state.LastSHeatSetpoint = null
+    }
+    else if (state.LastAction == "cool")
+    {
+    	log.info "Restoring slave ${state.LastAction} setpoint to ${state.LastSHeatSetpoint}"
+        thermostat2.setCoolingSetpoint(state.LastSCoolSetpoint)
+        state.LastAction = null
+        state.LastSCoolSetpoint = null
     }
 }
 
